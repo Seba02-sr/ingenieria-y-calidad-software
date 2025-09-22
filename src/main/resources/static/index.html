@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mini Contacts (Front)</title>
+  <style>
+    :root{--bg:#0f1220;--card:#171a2b;--ink:#e8eaf6;--muted:#aab0d5;--line:#232846}
+    *{box-sizing:border-box}
+    body{margin:0;background:linear-gradient(120deg,var(--bg),#10162d);color:var(--ink);font:16px/1.5 system-ui,-apple-system,Segoe UI,Roboto}
+    .wrap{max-width:900px;margin:40px auto;padding:0 16px}
+    .card{background:linear-gradient(180deg,var(--card),#12152a);border:1px solid var(--line);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:18px}
+    h1{margin:0 0 10px} .muted{color:var(--muted);font-size:14px}
+    input,button{background:#0d1122;color:var(--ink);border:1px solid #262c4a;border-radius:10px;padding:10px;font:inherit}
+    input[type="search"]{width:100%}
+    .grid{display:grid;gap:10px;grid-template-columns:2fr 1.2fr 1.6fr}
+    .row{display:flex;gap:8px;align-items:center}
+    .right{display:flex;gap:8px;justify-content:flex-end}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{border:1px solid var(--line);padding:8px;text-align:left}
+    th{background:#0e1428}
+    @media (max-width:760px){.grid{grid-template-columns:1fr}}
+  </style>
+  <script>
+    // Prevent 404 on SPA-like reload when hosted under Spring Boot
+    // (not strictly necessary here, but harmless)
+  </script>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Mini Contacts (Front)</h1>
+      <p class="muted">UI mínima. Apunta al backend Spring Boot en <code>http://localhost:8080</code>.</p>
+
+      <div class="row" style="gap:10px;margin:10px 0 14px 0">
+        <input id="q" type="search" placeholder="Buscar por nombre/teléfono/email (/)" />
+        <button id="clear">Limpiar</button>
+      </div>
+
+      <div class="grid">
+        <input id="name"  placeholder="Nombre*" />
+        <input id="phone" placeholder="Teléfono" />
+        <input id="email" placeholder="Email" />
+      </div>
+      <div class="right" style="margin-top:10px">
+        <button id="add">Agregar</button>
+        <button id="reload">Recargar</button>
+      </div>
+
+      <table>
+        <thead>
+          <tr><th style="width:70px">ID</th><th>Nombre</th><th>Teléfono</th><th>Email</th><th style="width:170px">Acciones</th></tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+
+      <p class="muted" style="margin-top:10px" id="status">Status: …</p>
+    </div>
+  </div>
+
+<script>
+const API = 'http://localhost:8080/api/contacts';
+
+const $q = document.getElementById('q');
+const $clear = document.getElementById('clear');
+const $name = document.getElementById('name');
+const $phone = document.getElementById('phone');
+const $email = document.getElementById('email');
+const $add = document.getElementById('add');
+const $reload = document.getElementById('reload');
+const $tbody = document.getElementById('tbody');
+const $status = document.getElementById('status');
+
+function escapeHTML(s){ return (s||'').replace(/[&<>"']/g, m => ({'&':'&','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m] || m)); }
+
+async function list(q=''){
+  const url = q ? `${API}?q=${encodeURIComponent(q)}` : API;
+  const r = await fetch(url);
+  if(!r.ok) throw new Error('API error');
+  return r.json();
+}
+
+async function load(){
+  $status.textContent = 'Status: cargando...';
+  try{
+    const data = await list($q.value.trim());
+    $tbody.innerHTML = '';
+    if(data.length === 0){
+      $tbody.innerHTML = '<tr><td colspan="5" class="muted">Sin resultados</td></tr>';
+    } else {
+      data.forEach(c => {
+        const tr = document.createElement('tr');
+        tr.dataset.id = c.id;
+        tr.innerHTML = `
+          <td>${c.id}</td>
+          <td contenteditable="true" data-field="name">${escapeHTML(c.name||'')}</td>
+          <td contenteditable="true" data-field="phone">${escapeHTML(c.phone||'')}</td>
+          <td contenteditable="true" data-field="email">${escapeHTML(c.email||'')}</td>
+          <td>
+            <button data-act="save">Guardar</button>
+            <button data-act="del">Eliminar</button>
+          </td>`;
+        $tbody.appendChild(tr);
+      });
+    }
+    $status.textContent = 'Status: OK';
+  } catch(e){
+    $status.textContent = 'Status: API no disponible';
+  }
+}
+
+$tbody.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button'); if(!btn) return;
+  const tr = btn.closest('tr'); const id = tr.dataset.id;
+  if(btn.dataset.act === 'del'){
+    await fetch(`${API}/${id}`, { method:'DELETE' });
+    load(); return;
+  }
+  if(btn.dataset.act === 'save'){
+    const payload = {
+      name:  tr.querySelector('[data-field="name"]').innerText.trim(),
+      phone: tr.querySelector('[data-field="phone"]').innerText.trim(),
+      email: tr.querySelector('[data-field="email"]').innerText.trim(),
+    };
+    await fetch(`${API}/${id}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    load();
+  }
+});
+
+$add.addEventListener('click', async () => {
+  const payload = {
+    name:  $name.value.trim(),
+    phone: $phone.value.trim(),
+    email: $email.value.trim()
+  };
+  if(!payload.name){ alert('Nombre es obligatorio'); return; }
+  const r = await fetch(API, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+  if(!r.ok){ alert('Error al crear'); return; }
+  $name.value = $phone.value = $email.value = '';
+  load();
+});
+
+$q.addEventListener('input', () => load());
+$clear.addEventListener('click', () => { $q.value=''; load(); $q.focus(); });
+document.addEventListener('keydown', e => { if(e.key==='/' && document.activeElement!==$q){ e.preventDefault(); $q.focus(); }});
+
+$reload.addEventListener('click', load);
+load();
+</script>
+</body>
+</html>
+
